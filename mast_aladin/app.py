@@ -1,11 +1,14 @@
+from pathlib import Path
 import os
 import warnings
-from pathlib import Path
 from traitlets import observe
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+import astropy.units as u
+import warnings
+
 from astropy.wcs import WCS
 from astroquery.mast import MastMissions
 
@@ -26,6 +29,10 @@ from ipypopout import PopoutButton
 from mast_aladin.aida import AIDA
 from mast_aladin.mixins import DelayUntilRendered
 import mast_aladin.utils.parquet as parquet
+
+from astroquery.mast import MastMissionsClass
+
+from mast_aladin.utils.validators import is_valid_s3_uri, check_table_for_columns
 from mast_aladin.utils.validators import (
     is_valid_s3_uri, check_table_for_columns, guess_coord_cols
 )
@@ -36,6 +43,9 @@ from mast_aladin.catalogs import (
 )
 from mast_aladin.catalogs.throttle import throttle
 import roman_datamodels.datamodels as rdd
+import os
+import numpy as np
+
 
 __all__ = [
     'MastAladin',
@@ -457,6 +467,158 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
             unit='deg'
         )
         return PolygonSkyRegion(sky_corners)
+
+    def _apply_column_filters(table, filters):
+        """
+        Filter a table by exact-match (or membership, for list/tuple/set values)
+        criteria on one or more columns.
+
+        Parameters
+        ----------
+        table : `~astropy.table.Table`
+            Table to filter.
+        filters : dict or None
+            Mapping of column name to an acceptable value, or a list/tuple/set of
+            acceptable values (OR logic within a column, AND logic across columns).
+            e.g. ``{"optical_element": ["F158", "F184"]}``.
+
+        Returns
+        -------
+        `~astropy.table.Table`
+            The filtered table. Returned unchanged if ``filters`` is `None` or empty.
+        """
+        if not filters:
+            return table
+
+        mask = np.ones(len(table), dtype=bool)
+        for column, value in filters.items():
+            if column not in table.colnames:
+                raise KeyError(
+                    f"Column '{column}' not found in results table. "
+                    f"Available columns: {table.colnames}"
+                )
+            if isinstance(value, (list, tuple, set)):
+                mask &= np.isin(table[column], list(value))
+            else:
+                mask &= (table[column] == value)
+
+        return table[mask]
+
+    def find_level3_products(self, l4_filename,
+                             mission_app,
+                             coordinates=None,
+                             radius=1 * u.arcsec,
+                             filters=None,
+                             download=False):
+        """
+        Given a Roman Level 4 product, find the corresponding Roman Level 3 product(s)
+        in the MAST archive.
+
+        As a first pass, the ``fileSetName`` derived from ``l4_filename`` is used to
+        query the archive directly via
+        `MastMissionsClass.query_criteria`. If no Level 3
+        match is found this way, a fallback search is performed using
+        `MastMissionsClass.query_region` centered on ``ra``/``dec`` within ``radius``;
+        if None then the center of the current mast_aladin viewport.
+
+        Parameters
+        ----------
+        l4_filename : str or Path
+            The filename (or path) of a Roman Level 4 product.
+        coordinates : `~astropy.coordinates.SkyCoord`, optional
+            SkyCoord object containing an optional position to center coordinate search.
+            Only used as a fallback if the filename-based search returns no Level 3 matches
+            and user wants to specify the ra/dec.
+            If None, use current viewport center from aida methods.
+        radius : ~astropy.units.Quantity, optional
+            Search radius around ``ra``/``dec`` for the fallback coordinate search.
+            Default is 1 arcsecond.
+        mission_app : `~astroquery.mast.missions.MastMissionsClass`, optional
+            A MastMissions client for the Roman mission. If not provided, a new
+            client instance is created.
+        filters : dict or None, optional
+            Mapping of column name to an acceptable value, or a list/tuple/set of
+            acceptable values (OR logic within a column, AND logic across columns).
+            e.g. ``{"optical_element": ["F158", "F184"]}``.
+        download : bool, optional
+            Whether to download the retrieved L3 products to a local path. Default is True.
+
+        Returns
+        -------
+        `~astropy.table.Table`
+            Table of Level 3 products matching either search. Empty if none are found.
+        """
+
+        # given the need for an API token to use MastMissions on test,
+        # for now we need to require the user to pass in a MastMissionsClass instance
+        # for the Roman mission.
+        # TODO: consider adding a way to pass in an API token to create a MastMissionsClass instance
+        if not isinstance(mission_app, MastMissionsClass):
+            raise TypeError(
+                f"mission_app must be an instance of MastMissionsClass, "
+                f"not {type(mission_app)}."
+            )
+
+        fileset_name = fileset_name_from_filename(l4_filename)
+        print(rf"Searching for Level 3 products with fileSetName: {fileset_name}")
+
+        results = mission_app.get_unique_product_list(fileSetName=fileset_name)
+        mask = np.array(['3' in level for level in results["productLevel"]])
+        level3 = results[mask]
+
+        if len(level3) == 0:
+            if 'segm' in l4_filename:
+                # the segmentation map retains the original filename in its metadata,
+                # even if the user renamed the input file
+                segmap = rdd.open(l4_filename)
+                orig_filename = segmap.meta.filename
+                fileset_name = fileset_name_from_filename(orig_filename)
+                results = mission_app.get_unique_product_list(fileSetName=fileset_name)
+                mask = np.array(['3' in level for level in results["productLevel"]])
+                level3 = results[mask]
+
+            elif 'cat' in l4_filename:
+                # photometric and spectroscopic catalogs have less metadata
+                # so perform an astroquery search by coordinates instead of by fileSetName
+                warnings.warn(f"No level 3 products found for fileSetName '{fileset_name}'. "
+                              "Falling back to a coordinate-based search.")
+                if coordinates is None:
+                    coordinates = self.get_viewport("sky")["center"]
+                results = mission_app.query_region(coordinates, radius=radius)
+                mask = np.array(['3' in level for level in results["productLevel"]])
+                level3 = self._apply_column_filters(results[mask], filters)
+
+            if download:
+                mission_app.download_products(level3)['Local Path']
+
+        return level3
+
+
+def fileset_name_from_filename(filename):
+    """
+    Derive the MAST Roman ``fileSetName`` from a Level 3 or Level 4 product filename.
+
+    Roman Level 3 (mosaic) and Level 4 (catalog/segmentation map) products for the
+    same field share an identical ``fileSetName`` (e.g.
+    ``r00004_r0_full_270p65x69y50_f158``). This string is a prefix shared by every
+    product filename for that field, followed by a single underscore-delimited
+    suffix identifying the product type - e.g. ``_coadd.asdf`` for the Level 3
+    mosaic, or ``_segm.asdf``/``_cat.parquet`` for Level 4 products.
+
+    Parameters
+    ----------
+    filename : str or path
+        The filename (or full path) of a Roman Level 4 product.
+
+    Returns
+    -------
+    str
+        The ``fileSetName`` prefix shared by all products for this field,
+        including the corresponding Level 3 product.
+    """
+    stem = Path(filename).stem  # drop directory and extension
+    fileset_name, middle, _suffix = stem.rpartition('_')
+    return fileset_name
 
     def show(self, loc="sidecar:split-right", title="mast-aladin", ref=None):
         """
