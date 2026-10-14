@@ -45,6 +45,7 @@ from mast_aladin.catalogs.throttle import throttle
 import roman_datamodels.datamodels as rdd
 import os
 import numpy as np
+import pyarrow.parquet as pq
 
 
 __all__ = [
@@ -554,7 +555,8 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
         level3 = results[mask]
 
         if len(level3) == 0:
-            if 'segm' in l4_filename:
+            if 'asdf' in l4_filename:
+                # TODO: should we filter on it being an asdf file? or just check if it's a Roman datamodel?
                 # the segmentation map retains the original filename in its metadata,
                 # even if the user renamed the input file
                 segmap = rdd.open(l4_filename)
@@ -564,9 +566,20 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
                 mask = np.array(['3' in level for level in results["productLevel"]])
                 level3 = results[mask]
 
-            elif 'cat' in l4_filename:
-                # photometric and spectroscopic catalogs have less metadata
-                # so perform an astroquery search by coordinates instead of by fileSetName
+            elif 'parquet' in l4_filename:
+                # photometric, spectroscopic, and microlensing catalogs are stored in parquet format,
+                # which contains a 'roman' schema with the original filename in its metadata
+                catalog = pq.read_schema(l4_filename)
+                orig_filename = catalog.roman.meta.filename
+                fileset_name = fileset_name_from_filename(orig_filename)
+                results = mission_app.get_unique_product_list(fileSetName=fileset_name)
+                mask = np.array(['3' in level for level in results["productLevel"]])
+                level3 = results[mask]
+
+            else:
+                # if the user has renamed the input file,
+                # or if the input file is a Level 4 product that does not contain the original
+                # filename in its metadata, we fall back to a coordinate-based search
                 warnings.warn(f"No level 3 products found for fileSetName '{fileset_name}'. "
                               "Falling back to a coordinate-based search.")
                 if coordinates is None:
