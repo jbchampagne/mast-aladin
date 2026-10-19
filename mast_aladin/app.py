@@ -540,7 +540,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
             )
 
         stem = Path(l4_filename).stem  # drop directory and extension
-        fileset_name, _, _ = stem.rpartition('_') # if it's an L4, it will end in "_segm" or "_cat"
+        fileset_name, _, _ = stem.rpartition('_')  # if it's an L4, it will end in "_segm" or "_cat"
 
         print(rf"Searching for Level 3 products with fileSetName: {fileset_name}")
         try:
@@ -552,9 +552,10 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
             )
         except InvalidQueryError:
             orig_filename = None
-            suffix = l4_filename.split('.')[-1].lower() # split on file extension
-            print("No Level 3 products found with fileSetName. Attempting to extract original filename from metadata...")
-            if suffix=='asdf':
+            suffix = l4_filename.split('.')[-1].lower()  # split on file extension
+            print("No Level 3 products found with fileSetName. "
+                  "Attempting to extract original filename from metadata...")
+            if suffix == 'asdf':
                 # check if it's a segmentation map (ASDF) or catalog (parquet) file,
                 # and if so, try to extract the original filename from the metadata
                 try:
@@ -565,7 +566,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
                     fileset_name = orig_filename.rpartition('_')[0]
                 except ValueError:
                     orig_filename = None
-            elif suffix=='parquet':
+            elif suffix == 'parquet':
                 try:
                     catalog = pq.read_schema(l4_filename).metadata
                     orig_filename = catalog[b'roman.meta.filename'].decode('utf-8')
