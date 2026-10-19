@@ -6,8 +6,6 @@ from traitlets import observe
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-import astropy.units as u
-import warnings
 
 from astropy.wcs import WCS
 from astroquery.mast import MastMissions
@@ -31,6 +29,7 @@ from mast_aladin.mixins import DelayUntilRendered
 import mast_aladin.utils.parquet as parquet
 
 from astroquery.mast import MastMissionsClass
+from astroquery.exceptions import InvalidQueryError
 
 from mast_aladin.utils.validators import is_valid_s3_uri, check_table_for_columns
 from mast_aladin.utils.validators import (
@@ -42,6 +41,7 @@ from mast_aladin.catalogs import (
     is_likely_an_observation_table,
 )
 from mast_aladin.catalogs.throttle import throttle
+import asdf
 import roman_datamodels.datamodels as rdd
 import os
 import numpy as np
@@ -505,12 +505,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
 
         return table[mask]
 
-    def find_level3_products(self, l4_filename,
-                             mission_app,
-                             coordinates=None,
-                             radius=1 * u.arcsec,
-                             filters=None,
-                             download=False):
+    def find_roman_level3_products(self, l4_filename, mission_app):
         """
         Given a Roman Level 4 product, find the corresponding Roman Level 3 product(s)
         in the MAST archive.
@@ -526,24 +521,8 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
         ----------
         l4_filename : str or Path
             The filename (or path) of a Roman Level 4 product.
-        coordinates : `~astropy.coordinates.SkyCoord`, optional
-            SkyCoord object containing an optional position to center coordinate search.
-            Only used as a fallback if the filename-based search returns no Level 3 matches
-            and user wants to specify the ra/dec.
-            If None, use current viewport center from aida methods.
-        radius : ~astropy.units.Quantity, optional
-            Search radius around ``ra``/``dec`` for the fallback coordinate search.
-            Default is 1 arcsecond.
-        mission_app : `~astroquery.mast.missions.MastMissionsClass`, optional
-            A MastMissions client for the Roman mission. If not provided, a new
-            client instance is created.
-        filters : dict or None, optional
-            Mapping of column name to an acceptable value, or a list/tuple/set of
-            acceptable values (OR logic within a column, AND logic across columns).
-            e.g. ``{"optical_element": ["F158", "F184"]}``.
-        download : bool, optional
-            Whether to download the retrieved L3 products to a local path. Default is True.
-
+        mission_app : `~astroquery.mast.missions.MastMissionsClass`
+            A MastMissions client for the Roman mission.
         Returns
         -------
         `~astropy.table.Table`
@@ -560,50 +539,51 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
                 f"not {type(mission_app)}."
             )
 
-        fileset_name = fileset_name_from_filename(l4_filename)
+        stem = Path(l4_filename).stem  # drop directory and extension
+        fileset_name, _, _ = stem.rpartition('_') # if it's an L4, it will end in "_segm" or "_cat"
+
         print(rf"Searching for Level 3 products with fileSetName: {fileset_name}")
+        try:
+            results = mission_app.get_unique_product_list(fileset_name)
+        except KeyError:
+            raise ValueError(
+                f"Could not find Level 3 products with fileSetName '{fileset_name}'. "
+                f"Please provide a valid Roman Level 4 product file."
+            )
+        except InvalidQueryError:
+            orig_filename = None
+            suffix = l4_filename.split('.')[-1].lower() # split on file extension
+            print("No Level 3 products found with fileSetName. Attempting to extract original filename from metadata...")
+            if suffix=='asdf':
+                # check if it's a segmentation map (ASDF) or catalog (parquet) file,
+                # and if so, try to extract the original filename from the metadata
+                try:
+                    # NB: using rdd.open() here will raise a warning that
+                    # the filename doesn't match the metadata, and will rename the metadata key!!
+                    with asdf.open(l4_filename) as segmap:
+                        orig_filename = segmap["roman"]["meta"]["filename"]
+                    fileset_name = orig_filename.rpartition('_')[0]
+                except ValueError:
+                    orig_filename = None
+            elif suffix=='parquet':
+                try:
+                    catalog = pq.read_schema(l4_filename).metadata
+                    orig_filename = catalog[b'roman.meta.filename'].decode('utf-8')
+                    fileset_name = orig_filename.rpartition('_')[0]
+                except ValueError:
+                    orig_filename = None
+            print(f"...{orig_filename}")
+            if orig_filename is None:
+                # if the user has not provided a conventional Roman file,
+                # has changed the metadata, or converted to FITS, raise an error
+                raise ValueError(
+                    f"Could not extract original filename from {l4_filename}. "
+                    f"Please provide a valid Roman Level 4 product file."
+                )
 
-        results = mission_app.get_unique_product_list(fileSetName=fileset_name)
-        mask = np.array(['3' in level for level in results["productLevel"]])
-        level3 = results[mask]
+            results = mission_app.get_unique_product_list(fileset_name)
 
-        if len(level3) == 0:
-            if 'asdf' in l4_filename:
-                # TODO: should we filter on it being an asdf file? or just check if it's a Roman datamodel?
-                # the segmentation map retains the original filename in its metadata,
-                # even if the user renamed the input file
-                segmap = rdd.open(l4_filename)
-                orig_filename = segmap.meta.filename
-                fileset_name = fileset_name_from_filename(orig_filename)
-                results = mission_app.get_unique_product_list(fileSetName=fileset_name)
-                mask = np.array(['3' in level for level in results["productLevel"]])
-                level3 = results[mask]
-
-            elif 'parquet' in l4_filename:
-                # photometric, spectroscopic, and microlensing catalogs are stored in parquet format,
-                # which contains a 'roman' schema with the original filename in its metadata
-                catalog = pq.read_schema(l4_filename)
-                orig_filename = catalog.roman.meta.filename
-                fileset_name = fileset_name_from_filename(orig_filename)
-                results = mission_app.get_unique_product_list(fileSetName=fileset_name)
-                mask = np.array(['3' in level for level in results["productLevel"]])
-                level3 = results[mask]
-
-            else:
-                # if the user has renamed the input file,
-                # or if the input file is a Level 4 product that does not contain the original
-                # filename in its metadata, we fall back to a coordinate-based search
-                warnings.warn(f"No level 3 products found for fileSetName '{fileset_name}'. "
-                              "Falling back to a coordinate-based search.")
-                if coordinates is None:
-                    coordinates = self.get_viewport("sky")["center"]
-                results = mission_app.query_region(coordinates, radius=radius)
-                mask = np.array(['3' in level for level in results["productLevel"]])
-                level3 = self._apply_column_filters(results[mask], filters)
-
-            if download:
-                mission_app.download_products(level3)['Local Path']
-
+        level3 = results[results['category'] == '3']
         return level3
 
 
