@@ -44,7 +44,6 @@ from mast_aladin.catalogs.throttle import throttle
 import asdf
 import roman_datamodels.datamodels as rdd
 import os
-import numpy as np
 import pyarrow.parquet as pq
 
 
@@ -469,42 +468,6 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
         )
         return PolygonSkyRegion(sky_corners)
 
-    def _apply_column_filters(table, filters):
-        """
-        Filter a table by exact-match (or membership, for list/tuple/set values)
-        criteria on one or more columns.
-
-        Parameters
-        ----------
-        table : `~astropy.table.Table`
-            Table to filter.
-        filters : dict or None
-            Mapping of column name to an acceptable value, or a list/tuple/set of
-            acceptable values (OR logic within a column, AND logic across columns).
-            e.g. ``{"optical_element": ["F158", "F184"]}``.
-
-        Returns
-        -------
-        `~astropy.table.Table`
-            The filtered table. Returned unchanged if ``filters`` is `None` or empty.
-        """
-        if not filters:
-            return table
-
-        mask = np.ones(len(table), dtype=bool)
-        for column, value in filters.items():
-            if column not in table.colnames:
-                raise KeyError(
-                    f"Column '{column}' not found in results table. "
-                    f"Available columns: {table.colnames}"
-                )
-            if isinstance(value, (list, tuple, set)):
-                mask &= np.isin(table[column], list(value))
-            else:
-                mask &= (table[column] == value)
-
-        return table[mask]
-
     def find_roman_level3_products(self, l4_filename, mission_app):
         """
         Given a Roman Level 4 product, find the corresponding Roman Level 3 product(s)
@@ -544,48 +507,49 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
 
         print(rf"Searching for Level 3 products with fileSetName: {fileset_name}")
         try:
-            results = mission_app.get_unique_product_list(fileset_name)
+            return _extract_l3_from_original_filename(fileset_name, mission_app)
         except KeyError:
             raise ValueError(
                 f"Could not find Level 3 products with fileSetName '{fileset_name}'. "
                 f"Please provide a valid Roman Level 4 product file."
             )
         except InvalidQueryError:
-            orig_filename = None
-            suffix = l4_filename.split('.')[-1].lower()  # split on file extension
-            print("No Level 3 products found with fileSetName. "
+            print(f"No Level 3 products found with fileSetName {fileset_name}. "
                   "Attempting to extract original filename from metadata...")
-            if suffix == 'asdf':
-                # check if it's a segmentation map (ASDF) or catalog (parquet) file,
-                # and if so, try to extract the original filename from the metadata
-                try:
-                    # NB: using rdd.open() here will raise a warning that
-                    # the filename doesn't match the metadata, and will rename the metadata key!!
-                    with asdf.open(l4_filename) as segmap:
-                        orig_filename = segmap["roman"]["meta"]["filename"]
-                    fileset_name = orig_filename.rpartition('_')[0]
-                except ValueError:
-                    orig_filename = None
-            elif suffix == 'parquet':
-                try:
-                    catalog = pq.read_schema(l4_filename).metadata
-                    orig_filename = catalog[b'roman.meta.filename'].decode('utf-8')
-                    fileset_name = orig_filename.rpartition('_')[0]
-                except ValueError:
-                    orig_filename = None
-            print(f"...{orig_filename}")
-            if orig_filename is None:
-                # if the user has not provided a conventional Roman file,
-                # has changed the metadata, or converted to FITS, raise an error
-                raise ValueError(
-                    f"Could not extract original filename from {l4_filename}. "
-                    f"Please provide a valid Roman Level 4 product file."
-                )
 
-            results = mission_app.get_unique_product_list(fileset_name)
+        # treat the file as ASDF
+        try:
+            # NB: using rdd.open() here will raise a warning that
+            # the filename doesn't match the metadata, and will rename the metadata key!!
+            with asdf.open(l4_filename) as segmap:
+                orig_filename = segmap["roman"]["meta"]["filename"]
+            fileset_name = orig_filename.rpartition('_')[0]
+            return _extract_l3_from_original_filename(fileset_name, mission_app)
+        except ValueError:
+            print(f"Could not extract original filename assuming {l4_filename} is ASDF. "
+                    "Attempting to treat it as Parquet...")
 
-        level3 = results[results['category'] == '3']
-        return level3
+        # treat the file as parquet
+        try:
+            catalog = pq.read_schema(l4_filename).metadata
+            orig_filename = catalog[b'roman.meta.filename'].decode('utf-8')
+            fileset_name = orig_filename.rpartition('_')[0]
+            return _extract_l3_from_original_filename(fileset_name, mission_app)
+        except ValueError:
+            print(f"Could not extract original filename assuming {l4_filename} is Parquet. ")
+
+        # if the user has not provided a conventional Roman file,
+        # has changed the metadata, or converted to FITS, raise an error
+        raise ValueError(
+            f"Could not extract original filename from {l4_filename}. "
+            f"Please provide a valid Roman Level 4 product file."
+        )
+
+
+def _extract_l3_from_original_filename(fileset_name, mission_app):
+    results = mission_app.get_unique_product_list(fileset_name)
+    level3 = results[results['category'] == '3']
+    return level3
 
 
 def fileset_name_from_filename(filename):

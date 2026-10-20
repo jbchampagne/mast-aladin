@@ -168,8 +168,28 @@ def _mock_mission_app():
     return mission_app
 
 
+def test_mock_mission_app_get_unique_product_list():
+    """
+    Unit test for the `get_unique_product_list` side-effect function used
+    by the `_mock_mission_app` test helper: it should return the Level 3
+    product table when queried with the matching fileSetName, and raise
+    `InvalidQueryError` for any other fileSetName.
+    """
+    mission_app = _mock_mission_app()
+
+    result = mission_app.get_unique_product_list(L3_FILESET_NAME)
+    assert len(result) == 1
+    assert result["fileSetName"][0] == L3_FILESET_NAME
+    assert result["category"][0] == "3"
+
+    with pytest.raises(InvalidQueryError, match="no match"):
+        mission_app.get_unique_product_list("some_other_fileset_name")
+
+
 @pytest.mark.parametrize("l4_filename", [
+    # standardized asdf filename for Roman Level 4 segmentation map product
     "r0034201001001001001_0001_wfi01_f087_segm.asdf",
+    # file renamed by the user
     "dummy.asdf",
 ])
 def test_find_roman_level3_products_from_asdf(MastAladin_app, write_asdf_file, l4_filename):
@@ -183,7 +203,9 @@ def test_find_roman_level3_products_from_asdf(MastAladin_app, write_asdf_file, l
 
 
 @pytest.mark.parametrize("l4_filename", [
+    # standardized parquet filename for Roman Level 4 catalog product
     "r0034201001001001001_0001_wfi01_f087_cat.parquet",
+    # file renamed by the user
     "dummy.parquet",
 ])
 def test_find_roman_level3_products_from_parquet(MastAladin_app, write_parquet_file, l4_filename):
@@ -194,3 +216,11 @@ def test_find_roman_level3_products_from_parquet(MastAladin_app, write_parquet_f
 
     assert len(result) > 0
     assert result["fileSetName"][0] == L3_FILESET_NAME
+
+
+def test_find_roman_level3_products_invalid_mission_app(MastAladin_app, write_asdf_file):
+    l4_path = write_asdf_file("dummy.asdf", orig_filename=ORIG_FILENAME)
+
+    with pytest.raises(TypeError,
+                       match="mission_app must be an instance of MastMissionsClass, not <class 'NoneType'>."):  # noqa: E501
+        MastAladin_app.find_roman_level3_products(str(l4_path), None)
