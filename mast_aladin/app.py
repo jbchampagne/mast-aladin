@@ -514,7 +514,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
             return _extract_l3_from_original_filename(fileset_name, mission_app)
         except ValueError:
             print(f"Could not extract original filename assuming {l4_filename} is ASDF. "
-                    "Attempting to treat it as Parquet...")
+                  "Attempting to treat it as Parquet...")
 
         # treat the file as parquet
         try:
