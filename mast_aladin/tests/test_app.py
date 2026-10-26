@@ -156,48 +156,107 @@ L3_FILESET_NAME = ORIG_FILENAME.rpartition('_')[0]
 
 
 def _mock_mission_app():
+    """
+        Create a mocked `MastMissionsClass` instance that simulates the two-step
+        `query_criteria` -> `get_unique_product_list` lookup used by
+        `_extract_l3_from_metadata`.
+        """
     mission_app = Mock(spec=MastMissionsClass)
-    l3_table = Table({"category": ["3"], "fileSetName": [L3_FILESET_NAME]})
+    l3_table = Table({"category": ["3"], "fileSetName": [L3_FILESET_NAME], "productLevel": ["3"]})
 
-    def get_unique_product_list(fileset_name):
-        if fileset_name == L3_FILESET_NAME:
+    def query_criteria(**kwargs):
+        # stand-in for the query object astroquery would normally build
+        return kwargs
+
+    def get_unique_product_list(query):
+        if query.get("fileSetName") == L3_FILESET_NAME or "coordinates" in query:
             return l3_table
         raise InvalidQueryError("no match")
 
+    mission_app.query_criteria.side_effect = query_criteria
     mission_app.get_unique_product_list.side_effect = get_unique_product_list
     return mission_app
 
 
-def test_mock_mission_app_get_unique_product_list():
+def test_mock_mission_app_query_chain():
     """
-    Unit test for the `get_unique_product_list` side-effect function used
-    by the `_mock_mission_app` test helper: it should return the Level 3
-    product table when queried with the matching fileSetName, and raise
-    `InvalidQueryError` for any other fileSetName.
+    Unit test for the `_mock_mission_app` test helper: it should return the
+    Level 3 product table for a matching fileSetName or coordinates-based
+    query, and raise `InvalidQueryError` for any other query.
     """
     mission_app = _mock_mission_app()
 
-    result = mission_app.get_unique_product_list(L3_FILESET_NAME)
+    query = mission_app.query_criteria(fileSetName=L3_FILESET_NAME, productLevel=3)
+    result = mission_app.get_unique_product_list(query)
     assert len(result) == 1
     assert result["fileSetName"][0] == L3_FILESET_NAME
-    assert result["category"][0] == "3"
 
+    query = mission_app.query_criteria(coordinates="10d 20d", productLevel=3)
+    result = mission_app.get_unique_product_list(query)
+    assert len(result) == 1
+
+    query = mission_app.query_criteria(fileSetName="nonexistent", productLevel=3)
     with pytest.raises(InvalidQueryError, match="no match"):
-        mission_app.get_unique_product_list("some_other_fileset_name")
+        mission_app.get_unique_product_list(query)
 
 
-@pytest.mark.parametrize("l4_filename", [
-    # standardized asdf filename for Roman Level 4 segmentation map product
-    "r0034201001001001001_0001_wfi01_f087_segm.asdf",
-    # file renamed by the user
-    "dummy.asdf",
-])
-def test_find_roman_level3_products_from_asdf(MastAladin_app, write_asdf_file, l4_filename):
-    l4_path = write_asdf_file(l4_filename, orig_filename=ORIG_FILENAME)
+@pytest.fixture
+def mock_rdd_open():
+    """
+    Patch the `mast_aladin.app.rdd.open` function to return a mock object
+    with a `to_flat_dict` method that returns a dictionary containing
+    the necessary metadata for `find_roman_level3_products` to recover
+    the original Level 3 filename, since `find_roman_level3_products`
+    uses `rdd.open` to read the file and extract metadata.
+    """
+    flat = {
+           "roman.meta.filename": ORIG_FILENAME,
+           "roman.meta.wcsinfo.ra": 10.0,
+           "roman.meta.wcsinfo.dec": 20.0,
+           "roman.meta.instrument.name": "WFI",
+           "roman.meta.instrument.optical_element": "F087",
+           "roman.meta.observation.execution_plan": "EP1",
+           "roman.meta.observation.program": "P1",
+           "roman.meta.coadd_info.exposure_time": 100.0}
+    with patch("mast_aladin.app.rdd.open") as m:
+        m.return_value.to_flat_dict.return_value = flat
+        yield m
+
+
+def test_find_roman_level3_products_from_asdf(MastAladin_app,
+                                              write_asdf_file):
+    """
+    Test that `find_roman_level3_products` can extract the original Level 3 filename
+    from a Level 4 ASDF file and return the corresponding Level 3 product table.
+    It won't open the file, so rdd.open doesn't need to be called.
+    """
+    l4_path = write_asdf_file("r0034201001001001001_0001_wfi01_f087_segm.asdf",
+                              orig_filename=ORIG_FILENAME)
     mission_app = _mock_mission_app()
 
     result = MastAladin_app.find_roman_level3_products(str(l4_path), mission_app)
 
+    assert len(result) > 0
+    assert result["fileSetName"][0] == L3_FILESET_NAME
+
+
+def test_find_roman_level3_products_from_renamed_asdf(MastAladin_app,
+                                                      write_asdf_file,
+                                                      mock_rdd_open):
+    """
+    In practice, a renamed ASDF file will be opened by rdd.open, which will work for
+    real Roman files because they are valid inputs for roman_datamodels.
+    This test requires a mocked rdd.open to simulate the behavior of opening a renamed ASDF file
+    since the pytest fixture `write_asdf_file` creates a minimal ASDF file that is not a
+    valid Roman file and cannot be opened by rdd.open.
+    """
+    l4_path = write_asdf_file("dummy.asdf",
+                              orig_filename=ORIG_FILENAME)
+    mission_app = _mock_mission_app()
+
+    result = MastAladin_app.find_roman_level3_products(str(l4_path), mission_app)
+
+    mock_rdd_open.assert_called_once()
     assert len(result) > 0
     assert result["fileSetName"][0] == L3_FILESET_NAME
 
@@ -208,7 +267,12 @@ def test_find_roman_level3_products_from_asdf(MastAladin_app, write_asdf_file, l
     # file renamed by the user
     "dummy.parquet",
 ])
-def test_find_roman_level3_products_from_parquet(MastAladin_app, write_parquet_file, l4_filename):
+def test_find_roman_level3_products_from_parquet(MastAladin_app,
+                                                 write_parquet_file,
+                                                 l4_filename):
+    """
+    Test that `find_roman_level3_products` can find L3 products given any L4 parquet file.
+    """
     l4_path = write_parquet_file(l4_filename, orig_filename=ORIG_FILENAME)
     mission_app = _mock_mission_app()
 
@@ -218,7 +282,23 @@ def test_find_roman_level3_products_from_parquet(MastAladin_app, write_parquet_f
     assert result["fileSetName"][0] == L3_FILESET_NAME
 
 
-def test_find_roman_level3_products_invalid_mission_app(MastAladin_app, write_asdf_file):
+def test_find_roman_level3_products_invalid_file(MastAladin_app,
+                                                 tmp_path):
+    """
+    A file that isn't ASDF or parquet, and whose name doesn't follow the L4
+    naming convention, should raise a ValueError once all fallbacks fail.
+    """
+    l4_path = tmp_path / "some_random_file.fits"
+    l4_path.touch()
+    mission_app = _mock_mission_app()
+
+    with pytest.raises(ValueError,
+                       match="Could not extract original filename"):
+        MastAladin_app.find_roman_level3_products(str(l4_path), mission_app)
+
+
+def test_find_roman_level3_products_invalid_mission_app(MastAladin_app,
+                                                        write_asdf_file):
     l4_path = write_asdf_file("dummy.asdf", orig_filename=ORIG_FILENAME)
 
     with pytest.raises(TypeError,

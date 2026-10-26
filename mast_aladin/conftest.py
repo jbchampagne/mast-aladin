@@ -44,7 +44,12 @@ def write_asdf_file(tmp_path):
     """
     def _write(filename, orig_filename=None):
         path = tmp_path / filename
-        tree = {"roman": {"meta": {"filename": orig_filename}}}
+        tree = {"roman": {"meta": {"filename": orig_filename,
+                                   "wcsinfo": {"ra": 10.0, "dec": 20.0},
+                                   "instrument": {"name": "WFI", "optical_element": "F087"},
+                                   "observation": {"execution_plan": "EP1", "program": "P1"},
+                                   "coadd_info": {"exposure_time": 100.0}}}
+                }
         asdf.AsdfFile(tree).write_to(path)
         return path
     return _write
@@ -61,7 +66,14 @@ def write_parquet_file(tmp_path):
         path = tmp_path / filename
         schema = pa.schema([("ra", pa.float64()), ("dec", pa.float64())])
         schema = schema.with_metadata(
-            {b"roman.meta.filename": orig_filename.encode("utf-8")}
+            {b"roman.meta.filename": orig_filename.encode("utf-8"),
+             b"roman.meta.wcsinfo.ra": b"10.0",
+             b"roman.meta.wcsinfo.dec": b"20.0",
+             b"roman.meta.instrument.name": b"WFI",
+             b"roman.meta.instrument.optical_element": b"F087",
+             b"roman.meta.observation.execution_plan": b"EP1",
+             b"roman.meta.observation.program": b"P1",
+             b"roman.meta.coadd_info.exposure_time": b"100.0"}
         )
         table = pa.table({"ra": [10.0], "dec": [20.0]}, schema=schema)
         pq.write_table(table, path)
