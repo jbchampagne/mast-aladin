@@ -45,7 +45,9 @@ import astropy.units as u
 import roman_datamodels.datamodels as rdd
 import os
 import pyarrow.parquet as pq
+import logging
 
+logger = logging.getLogger(__name__)
 
 __all__ = [
     'MastAladin',
@@ -506,7 +508,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
         fileset_name, _, _ = stem.rpartition('_') # if it's an L4, it will end in "_segm" or "_cat"
         fileset_name = fileset_name or None
 
-        print(rf"Searching for Level 3 products with fileSetName: {fileset_name}")
+        logger.info("Searching for Level 3 products with fileSetName: %s", fileset_name)
         try:
             return _extract_l3_from_metadata(mission_app, **{'fileSetName': fileset_name, 'productLevel': 3})
         except KeyError:
@@ -515,8 +517,8 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
                 f"Please provide a valid Roman Level 4 product file."
             )
         except InvalidQueryError:
-            print(f"No Level 3 products found with fileSetName {fileset_name}. "
-                  "Attempting to extract original filename from metadata...")
+            logger.debug("No Level 3 products found with fileSetName %s. "
+                         "Attempting to extract original filename from metadata...", fileset_name)
 
         # treat the file as ASDF
         try:
@@ -536,8 +538,8 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
 
             return _extract_l3_from_metadata(mission_app, **query_items)
         except TypeError:
-            print(f"Could not extract original filename assuming {l4_filename} is ASDF. "
-                  "Attempting to treat it as Parquet...")
+            logger.debug("Could not extract original filename assuming %s is ASDF. "
+                         "Attempting to treat it as Parquet...", l4_filename)
 
         # treat the file as parquet
         try:
@@ -555,7 +557,7 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
                            }
             return _extract_l3_from_metadata(mission_app, **query_items)
         except ValueError:
-            print(f"Could not extract original filename assuming {l4_filename} is Parquet. ")
+            logger.debug("Could not extract original filename assuming %s is Parquet. ", l4_filename)
 
         # if the user has not provided a conventional Roman file,
         # has changed the metadata, or converted to FITS, raise an error
