@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_parent(from_level=4, to_level=3, filename=None, mission_app=None):
+def get_parent(filename=None, mission_app=None, to_level=None):
     """
     Given any Roman product, find its constituent lower-level products in the MAST archive.
     For example, given a Roman Level 4 product, find the corresponding Roman Level 3 product(s).
@@ -28,15 +28,16 @@ def get_parent(from_level=4, to_level=3, filename=None, mission_app=None):
         The filename (or path) of a Roman Level 4 product.
     mission_app : `~astroquery.mast.missions.MastMissionsClass`
         A MastMissions client for the Roman mission.
+    to_level: int, optional
+        The product level to search for. Currently only supports 3 (Level 3).
     Returns
     -------
     `~astropy.table.Table`
         Table of Level 3 products matching either search. Empty if none are found.
     """
 
-    if from_level != 4:
-        raise NotImplementedError("Only from_level=4 is currently supported.")
-    if to_level != 3:
+    # TODO: deprecate once the new `get_parent` function is fully implemented and tested.
+    if to_level is not None and to_level != 3:
         raise NotImplementedError("Only to_level=3 is currently supported.")
 
     # given the need for an API token to use MastMissions on test,

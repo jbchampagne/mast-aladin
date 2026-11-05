@@ -87,7 +87,7 @@ def test_find_roman_level3_products_from_asdf(write_asdf_file):
                               orig_filename=ORIG_FILENAME)
     mission_app = _mock_mission_app()
 
-    result = get_parent(4, 3, str(l4_path), mission_app)
+    result = get_parent(str(l4_path), mission_app, to_level=3)
 
     assert len(result) > 0
     assert result["fileSetName"][0] == L3_FILESET_NAME
@@ -105,7 +105,7 @@ def test_find_roman_level3_products_from_renamed_asdf(write_asdf_file, mock_rdd_
                               orig_filename=ORIG_FILENAME)
     mission_app = _mock_mission_app()
 
-    result = get_parent(4, 3, str(l4_path), mission_app)
+    result = get_parent(str(l4_path), mission_app, to_level=3)
 
     mock_rdd_open.assert_called_once()
     assert len(result) > 0
@@ -125,7 +125,7 @@ def test_find_roman_level3_products_from_parquet(write_parquet_file, l4_filename
     l4_path = write_parquet_file(l4_filename, orig_filename=ORIG_FILENAME)
     mission_app = _mock_mission_app()
 
-    result = get_parent(4, 3, str(l4_path), mission_app)
+    result = get_parent(str(l4_path), mission_app, to_level=3)
 
     assert len(result) > 0
     assert result["fileSetName"][0] == L3_FILESET_NAME
@@ -142,7 +142,7 @@ def test_find_roman_level3_products_invalid_file(tmp_path):
 
     with pytest.raises(ValueError,
                        match="Could not extract original filename"):
-        get_parent(4, 3, str(l4_path), mission_app)
+        get_parent(str(l4_path), mission_app, to_level=3)
 
 
 def test_find_roman_level3_products_invalid_mission_app(write_asdf_file):
@@ -150,4 +150,4 @@ def test_find_roman_level3_products_invalid_mission_app(write_asdf_file):
 
     with pytest.raises(TypeError,
                        match="mission_app must be an instance of MastMissionsClass, not <class 'NoneType'>."):  # noqa: E501
-        get_parent(4, 3, str(l4_path), None)
+        get_parent(str(l4_path), None, to_level=3)
