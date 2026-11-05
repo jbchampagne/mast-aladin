@@ -463,33 +463,6 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
         )
         return PolygonSkyRegion(sky_corners)
 
-
-def fileset_name_from_filename(filename):
-    """
-    Derive the MAST Roman ``fileSetName`` from a Level 3 or Level 4 product filename.
-
-    Roman Level 3 (mosaic) and Level 4 (catalog/segmentation map) products for the
-    same field share an identical ``fileSetName`` (e.g.
-    ``r00004_r0_full_270p65x69y50_f158``). This string is a prefix shared by every
-    product filename for that field, followed by a single underscore-delimited
-    suffix identifying the product type - e.g. ``_coadd.asdf`` for the Level 3
-    mosaic, or ``_segm.asdf``/``_cat.parquet`` for Level 4 products.
-
-    Parameters
-    ----------
-    filename : str or path
-        The filename (or full path) of a Roman Level 4 product.
-
-    Returns
-    -------
-    str
-        The ``fileSetName`` prefix shared by all products for this field,
-        including the corresponding Level 3 product.
-    """
-    stem = Path(filename).stem  # drop directory and extension
-    fileset_name, middle, _suffix = stem.rpartition('_')
-    return fileset_name
-
     def show(self, loc="sidecar:split-right", title="mast-aladin", ref=None):
         """
         Display MastAladin.
