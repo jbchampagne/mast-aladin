@@ -9,12 +9,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def find_roman_level3_products(l4_filename, mission_app):
+def get_parent(from_level=4, to_level=3, filename=None, mission_app=None):
     """
-    Given a Roman Level 4 product, find the corresponding Roman Level 3 product(s)
-    in the MAST archive.
+    Given any Roman product, find its constituent lower-level products in the MAST archive.
+    For example, given a Roman Level 4 product, find the corresponding Roman Level 3 product(s).
+    *NOTE* this currently only works for Level 4 --> Level 3 but will be extended in the future.
 
-    As a first pass, the ``fileSetName`` derived from ``l4_filename`` is used to
+    As a first pass, the ``fileSetName`` derived from ``filename`` is used to
     query the archive directly via
     `MastMissionsClass.query_criteria`. If no Level 3
     match is found this way, a fallback search is performed using
@@ -23,7 +24,7 @@ def find_roman_level3_products(l4_filename, mission_app):
 
     Parameters
     ----------
-    l4_filename : str or Path
+    filename : str or Path
         The filename (or path) of a Roman Level 4 product.
     mission_app : `~astroquery.mast.missions.MastMissionsClass`
         A MastMissions client for the Roman mission.
@@ -32,6 +33,11 @@ def find_roman_level3_products(l4_filename, mission_app):
     `~astropy.table.Table`
         Table of Level 3 products matching either search. Empty if none are found.
     """
+
+    if from_level != 4:
+        raise NotImplementedError("Only from_level=4 is currently supported.")
+    if to_level != 3:
+        raise NotImplementedError("Only to_level=3 is currently supported.")
 
     # given the need for an API token to use MastMissions on test,
     # for now we need to require the user to pass in a MastMissionsClass instance
@@ -43,7 +49,7 @@ def find_roman_level3_products(l4_filename, mission_app):
             f"not {type(mission_app)}."
         )
 
-    stem = Path(l4_filename).stem  # drop directory and extension
+    stem = Path(filename).stem  # drop directory and extension
     fileset_name, _, _ = stem.rpartition('_')  # if it's an L4, it will end in "_segm" or "_cat"
     fileset_name = fileset_name or None
 
@@ -62,7 +68,7 @@ def find_roman_level3_products(l4_filename, mission_app):
 
     # treat the file as ASDF
     try:
-        segmap = rdd.open(l4_filename)
+        segmap = rdd.open(filename)
         items = {k.split('roman.meta.')[1]: v for k, v in segmap.to_flat_dict().items() if
                  'roman.meta' in k}
 
@@ -79,11 +85,11 @@ def find_roman_level3_products(l4_filename, mission_app):
         return _extract_l3_from_metadata(mission_app, **query_items)
     except TypeError:
         logger.debug("Could not extract original filename assuming %s is ASDF. "
-                     "Attempting to treat it as Parquet...", l4_filename)
+                     "Attempting to treat it as Parquet...", filename)
 
     # treat the file as parquet
     try:
-        catalog = pq.read_schema(l4_filename).metadata
+        catalog = pq.read_schema(filename).metadata
         items = {k.decode().split('roman.meta.')[1]: v.decode("utf-8")
                  for k, v in catalog.items() if 'roman.meta' in k.decode()}
         query_items = {'coordinates': SkyCoord(ra=items['wcsinfo.ra'], dec=items['wcsinfo.dec'],
@@ -97,12 +103,12 @@ def find_roman_level3_products(l4_filename, mission_app):
                        }
         return _extract_l3_from_metadata(mission_app, **query_items)
     except ValueError:
-        logger.debug("Could not extract original filename assuming %s is Parquet. ", l4_filename)
+        logger.debug("Could not extract original filename assuming %s is Parquet. ", filename)
 
     # if the user has not provided a conventional Roman file,
     # has changed the metadata, or converted to FITS, raise an error
     raise ValueError(
-        f"Could not extract original filename from {l4_filename}. "
+        f"Could not extract original filename from {filename}. "
         f"Please provide a valid Roman Level 4 product file."
     )
 
