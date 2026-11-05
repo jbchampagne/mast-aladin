@@ -28,7 +28,6 @@ from mast_aladin.aida import AIDA
 from mast_aladin.mixins import DelayUntilRendered
 import mast_aladin.utils.parquet as parquet
 
-from mast_aladin.utils.validators import is_valid_s3_uri, check_table_for_columns
 from mast_aladin.utils.validators import (
     is_valid_s3_uri, check_table_for_columns, guess_coord_cols
 )
@@ -39,12 +38,9 @@ from mast_aladin.catalogs import (
 )
 from mast_aladin.catalogs.throttle import throttle
 import roman_datamodels.datamodels as rdd
-import os
 import logging
 
 logger = logging.getLogger(__name__)
-
-from mast_aladin.data_levels.roman import find_roman_level3_products as _find_roman_level3_products # noqa
 
 __all__ = [
     'MastAladin',
@@ -453,12 +449,6 @@ class MastAladin(Aladin, DelayUntilRendered, AIDA):
             unit='deg'
         )
         return PolygonSkyRegion(sky_corners)
-
-    def find_roman_level3_products(self, l4_filename, mission_app):
-        # keeping a wrapper to avoid existing tests from breaking,
-        # but the actual implementation is now in mast_aladin.missions.find_roman_level3_products
-        # TODO: deprecate this method in favor of the one in mast_aladin.data_levels.roman
-        return _find_roman_level3_products(l4_filename, mission_app)
 
 
 def fileset_name_from_filename(filename):
