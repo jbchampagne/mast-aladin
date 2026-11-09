@@ -58,12 +58,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     try:
         return _extract_l3_from_metadata(mission_app,
                                          **{'fileSetName': fileset_name, 'productLevel': 3})
-    except KeyError:
-        raise ValueError(
-            f"Could not find Level 3 products with fileSetName '{fileset_name}'. "
-            f"Please provide a valid Roman Level 4 product file."
-        )
-    except InvalidQueryError:
+    except (ValueError, InvalidQueryError):
         logger.debug("No Level 3 products found with fileSetName %s. "
                      "Attempting to extract original filename from metadata...", fileset_name)
 
@@ -116,6 +111,11 @@ def get_parent(filename=None, mission_app=None, to_level=None):
 
 def _extract_l3_from_metadata(mission_app, **items):
     query = mission_app.query_criteria(**items)
+    if len(query) == 0:
+        raise ValueError(
+            f"Could not find Level 3 products matching {items}. "
+            f"Please provide a valid Roman Level 4 product file."
+        )
     results = mission_app.get_unique_product_list(query)
     level3 = results[results['category'] == '3']
     return level3

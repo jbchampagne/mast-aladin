@@ -5,8 +5,6 @@ from traitlets import observe
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.io import fits
-
 from astropy.io import fits, votable
 from astropy.wcs import WCS
 from astroquery.mast import MastMissions

@@ -11,10 +11,10 @@ L3_FILESET_NAME = ORIG_FILENAME.rpartition('_')[0]
 
 def _mock_mission_app():
     """
-        Create a mocked `MastMissionsClass` instance that simulates the two-step
-        `query_criteria` -> `get_unique_product_list` lookup used by
-        `_extract_l3_from_metadata`.
-        """
+    Create a mocked `MastMissionsClass` instance that simulates the two-step
+    `query_criteria` -> `get_unique_product_list` lookup used by
+    `_extract_l3_from_metadata`.
+    """
     mission_app = Mock(spec=MastMissionsClass)
     l3_table = Table({"category": ["3"], "fileSetName": [L3_FILESET_NAME], "productLevel": ["3"]})
 
