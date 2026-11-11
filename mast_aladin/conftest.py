@@ -3,6 +3,7 @@ import pytest
 from astropy.table import Table
 from mast_aladin import MastAladin
 import jdaviz
+import json
 import asdf
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -39,8 +40,8 @@ def mast_observation_table():
 def write_asdf_file(tmp_path):
     """
     Create a minimal ASDF file mimicking a Roman Level 4 segmentation map
-    product, containing just enough metadata for ``find_roman_level3_products``
-    to recover the original Level 3 filename.
+    product, containing just enough metadata for ``roman.get_parent``
+    and ``roman.get_child`` to recover the original Level 3/4 filename.
     """
     def _write(filename, orig_filename=None):
         path = tmp_path / filename
@@ -59,8 +60,8 @@ def write_asdf_file(tmp_path):
 def write_parquet_file(tmp_path):
     """
     Create a minimal parquet file mimicking a Roman Level 4 catalog
-    product, containing just enough metadata for ``find_roman_level3_products``
-    to recover the original Level 3 filename.
+    product, containing just enough metadata for ``roman.get_parent``
+    and ``roman.get_child`` to recover the original Level 3 filename.
     """
     def _write(filename, orig_filename=None):
         path = tmp_path / filename
@@ -77,5 +78,21 @@ def write_parquet_file(tmp_path):
         )
         table = pa.table({"ra": [10.0], "dec": [20.0]}, schema=schema)
         pq.write_table(table, path)
+        return path
+    return _write
+
+
+@pytest.fixture
+def write_json_file(tmp_path):
+    """
+    Create a minimal json file mimicking a Roman Level 3 association
+    product, containing just enough metadata for ``roman.get_child``
+    to recover the original Level 4 filename.
+    """
+    def _write(filename, orig_filename=None):
+        path = tmp_path / filename
+        data = {'products': [{'name': orig_filename.split('_asn')[0]}]}
+        with open(path, 'w') as f:
+            json.dump(data, f)
         return path
     return _write
