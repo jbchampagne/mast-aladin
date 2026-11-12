@@ -36,7 +36,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     """
 
     # TODO: deprecate once the new `get_parent` function is fully implemented and tested.
-    if to_level is not None and to_level != 3:
+    if to_level not in [3]:
         raise NotImplementedError("Only to_level=3 is currently supported.")
 
     # given the need for an API token to use MastMissions on test,
@@ -108,7 +108,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     )
 
 
-def get_child(filename=None, mission_app=None, to_level=None):
+def get_child(filename=None, mission_app=None, to_level=4):
     """
     Given any Roman product, find its constituent higher-level products in the MAST archive.
     For example, given a Roman Level 3 product, find the corresponding Roman Level 4 product(s).
@@ -134,7 +134,7 @@ def get_child(filename=None, mission_app=None, to_level=None):
     """
 
     # TODO: deprecate once the new `get_child` function is fully implemented and tested.
-    if to_level is not None and to_level != 4:
+    if to_level not in [4]:
         raise NotImplementedError("Only to_level=4 is currently supported.")
 
     # given the need for an API token to use MastMissions on test,
