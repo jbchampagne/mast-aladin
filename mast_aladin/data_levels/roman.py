@@ -55,11 +55,13 @@ def get_parent(filename=None, mission_app=None, to_level=None):
 
     logger.info("Searching for Level 3 products with fileSetName: %s", fileset_name)
     try:
-        return _extract_product_from_metadata(mission_app=mission_app, level=3,
-                                              **{'fileSetName': fileset_name, 'productLevel': 3})
+        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+                                              **{'fileSetName': fileset_name,
+                                                 'productLevel': to_level})
     except (ValueError, InvalidQueryError):
-        logger.debug("No Level 3 products found with fileSetName %s. "
-                     "Attempting to extract original filename from metadata...", fileset_name)
+        logger.debug("No Level %d products found with fileSetName %s. "
+                     "Attempting to extract original filename from metadata...",
+                     to_level, fileset_name)
 
     # treat the file as ASDF
     try:
@@ -74,10 +76,11 @@ def get_parent(filename=None, mission_app=None, to_level=None):
                        'execution_plan': items['observation.execution_plan'],
                        'program': items['observation.program'],
                        'exposure_time': items['coadd_info.exposure_time'],
-                       'productLevel': 3
+                       'productLevel': to_level
                        }
 
-        return _extract_product_from_metadata(mission_app=mission_app, level=3, **query_items)
+        return _extract_product_from_metadata(mission_app=mission_app,
+                                              level=to_level, **query_items)
     except TypeError:
         logger.debug("Could not extract original filename assuming %s is ASDF. "
                      "Attempting to treat it as Parquet...", filename)
@@ -94,9 +97,10 @@ def get_parent(filename=None, mission_app=None, to_level=None):
                        'execution_plan': items['observation.execution_plan'],
                        'program': items['observation.program'],
                        'exposure_time': items['coadd_info.exposure_time'],
-                       'productLevel': 3
+                       'productLevel': to_level
                        }
-        return _extract_product_from_metadata(mission_app=mission_app, level=3, **query_items)
+        return _extract_product_from_metadata(mission_app=mission_app,
+                                              level=to_level, **query_items)
     except ValueError:
         logger.debug("Could not extract original filename assuming %s is Parquet. ", filename)
 
@@ -151,13 +155,15 @@ def get_child(filename=None, mission_app=None, to_level=4):
     fileset_name, _, _ = stem.rpartition('_')  # if it's an L3, it will end in "_coadd" or "_asn"
     fileset_name = fileset_name or None
 
-    logger.info("Searching for Level 4 products with fileSetName: %s", fileset_name)
+    logger.info("Searching for Level %d products with fileSetName: %s", to_level, fileset_name)
     try:
-        return _extract_product_from_metadata(mission_app=mission_app, level=4,
-                                              **{'fileSetName': fileset_name})
+        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+                                              **{'fileSetName': fileset_name,
+                                                 'productLevel': to_level})
     except (ValueError, InvalidQueryError):
-        logger.debug("No Level 4 products found with fileSetName %s. "
-                     "Attempting to extract original filename from metadata...", fileset_name)
+        logger.debug("No Level %d products found with fileSetName %s. "
+                     "Attempting to extract original filename from metadata...",
+                     to_level, fileset_name)
 
     # treat the file as ASDF
     try:
@@ -174,7 +180,8 @@ def get_child(filename=None, mission_app=None, to_level=4):
                        'exposure_time': items['coadd_info.exposure_time']
                        }
 
-        return _extract_product_from_metadata(mission_app=mission_app, level=4, **query_items)
+        return _extract_product_from_metadata(mission_app=mission_app,
+                                              level=to_level, **query_items)
     except (TypeError, ImportError):
         logger.debug("Could not extract original filename assuming %s is ASDF. "
                      "Attempting to treat it as json...", filename)
@@ -184,8 +191,9 @@ def get_child(filename=None, mission_app=None, to_level=4):
         with open(filename, 'r') as f:
             asn = json.load(f)
         fileset_name = asn['products'][0]['name']
-        return _extract_product_from_metadata(mission_app=mission_app, level=4,
-                                              **{'fileSetName': fileset_name})
+        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+                                              **{'fileSetName': fileset_name,
+                                                 'productLevel': to_level})
     except (ValueError, InvalidQueryError):
         logger.debug("Could not extract original filename assuming %s is json. ", filename)
 
