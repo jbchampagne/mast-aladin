@@ -1,7 +1,7 @@
 from astroquery.exceptions import InvalidQueryError
 from astroquery.mast import MastMissionsClass
 from astropy.table import Table
-from mast_aladin.product_levels.roman import get_parent, get_child
+from mast_aladin.data_levels.roman import get_parent, get_child
 import pytest
 from unittest.mock import Mock, patch
 
@@ -82,7 +82,7 @@ def mock_rdd_open():
            "roman.meta.observation.execution_plan": "EP1",
            "roman.meta.observation.program": "P1",
            "roman.meta.coadd_info.exposure_time": 100.0}
-    with patch("mast_aladin.product_levels.roman.rdd.open") as m:
+    with patch("mast_aladin.data_levels.roman.rdd.open") as m:
         m.return_value.to_flat_dict.return_value = flat
         yield m
 
