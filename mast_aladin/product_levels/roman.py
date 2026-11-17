@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_parent(filename=None, mission_app=None, to_level=None):
+def get_parent(filename=None, mission_search=None, to_level=None):
     """
     Given any Roman product, find its constituent lower-level products in the MAST archive.
     For example, given a Roman Level 4 product, find the corresponding Roman Level 3 product(s).
@@ -25,9 +25,9 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     ----------
     filename : str or Path
         The filename (or path) of a Roman Level 4 product.
-    mission_app : `~astroquery.mast.missions.MastMissionsClass`
+    mission_search : `~astroquery.mast.missions.MastMissionsClass`
         A MastMissions client for the Roman mission.
-    to_level: int, optional
+    to_level : int, optional
         The product level to search for. Currently only supports 3 (Level 3).
     Returns
     -------
@@ -43,10 +43,10 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     # for now we need to require the user to pass in a MastMissionsClass instance
     # for the Roman mission.
     # TODO: consider adding a way to pass in an API token to create a MastMissionsClass instance
-    if not isinstance(mission_app, MastMissionsClass):
+    if not isinstance(mission_search, MastMissionsClass):
         raise TypeError(
-            f"mission_app must be an instance of MastMissionsClass, "
-            f"not {type(mission_app)}."
+            f"mission_search must be an instance of MastMissionsClass, "
+            f"not {type(mission_search)}."
         )
 
     stem = Path(filename).stem  # drop directory and extension
@@ -55,7 +55,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
 
     logger.info("Searching for Level 3 products with fileSetName: %s", fileset_name)
     try:
-        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+        return _extract_product_from_metadata(mission_search=mission_search, level=to_level,
                                               **{'fileSetName': fileset_name,
                                                  'productLevel': to_level})
     except (ValueError, InvalidQueryError):
@@ -79,7 +79,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
                        'productLevel': to_level
                        }
 
-        return _extract_product_from_metadata(mission_app=mission_app,
+        return _extract_product_from_metadata(mission_search=mission_search,
                                               level=to_level, **query_items)
     except TypeError:
         logger.debug("Could not extract original filename assuming %s is ASDF. "
@@ -99,7 +99,7 @@ def get_parent(filename=None, mission_app=None, to_level=None):
                        'exposure_time': items['coadd_info.exposure_time'],
                        'productLevel': to_level
                        }
-        return _extract_product_from_metadata(mission_app=mission_app,
+        return _extract_product_from_metadata(mission_search=mission_search,
                                               level=to_level, **query_items)
     except ValueError:
         logger.debug("Could not extract original filename assuming %s is Parquet. ", filename)
@@ -112,10 +112,11 @@ def get_parent(filename=None, mission_app=None, to_level=None):
     )
 
 
-def get_child(filename=None, mission_app=None, to_level=4):
+def get_child(filename=None, mission_search=None, to_level=4):
     """
-    Given any Roman product, find its constituent higher-level products in the MAST archive.
-    For example, given a Roman Level 3 product, find the corresponding Roman Level 4 product(s).
+    Given any Roman pipeline product, find its descendant data products (higher product level)
+    in the MAST archive. For example, given a Roman Level 3 product, find the corresponding
+    Roman Level 4 product(s).
     *NOTE* this currently only works for Level 3 --> Level 4 but will be extended in the future.
 
     As a first pass, the ``fileSetName`` derived from ``filename`` is used to
@@ -127,7 +128,7 @@ def get_child(filename=None, mission_app=None, to_level=4):
     ----------
     filename : str or Path
         The filename (or path) of a Roman Level 3 product.
-    mission_app : `~astroquery.mast.missions.MastMissionsClass`
+    mission_search : `~astroquery.mast.missions.MastMissionsClass`
         A MastMissions client for the Roman mission.
     to_level: int, optional
         The product level to search for. Currently only supports 4 (Level 4).
@@ -145,10 +146,10 @@ def get_child(filename=None, mission_app=None, to_level=4):
     # for now we need to require the user to pass in a MastMissionsClass instance
     # for the Roman mission.
     # TODO: consider adding a way to pass in an API token to create a MastMissionsClass instance
-    if not isinstance(mission_app, MastMissionsClass):
+    if not isinstance(mission_search, MastMissionsClass):
         raise TypeError(
-            f"mission_app must be an instance of MastMissionsClass, "
-            f"not {type(mission_app)}."
+            f"mission_search must be an instance of MastMissionsClass, "
+            f"not {type(mission_search)}."
         )
 
     stem = Path(filename).stem  # drop directory and extension
@@ -157,7 +158,7 @@ def get_child(filename=None, mission_app=None, to_level=4):
 
     logger.info("Searching for Level %d products with fileSetName: %s", to_level, fileset_name)
     try:
-        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+        return _extract_product_from_metadata(mission_search=mission_search, level=to_level,
                                               **{'fileSetName': fileset_name,
                                                  'productLevel': to_level})
     except (ValueError, InvalidQueryError):
@@ -180,7 +181,7 @@ def get_child(filename=None, mission_app=None, to_level=4):
                        'exposure_time': items['coadd_info.exposure_time']
                        }
 
-        return _extract_product_from_metadata(mission_app=mission_app,
+        return _extract_product_from_metadata(mission_search=mission_search,
                                               level=to_level, **query_items)
     except (TypeError, ImportError):
         logger.debug("Could not extract original filename assuming %s is ASDF. "
@@ -191,7 +192,7 @@ def get_child(filename=None, mission_app=None, to_level=4):
         with open(filename, 'r') as f:
             asn = json.load(f)
         fileset_name = asn['products'][0]['name']
-        return _extract_product_from_metadata(mission_app=mission_app, level=to_level,
+        return _extract_product_from_metadata(mission_search=mission_search, level=to_level,
                                               **{'fileSetName': fileset_name,
                                                  'productLevel': to_level})
     except (ValueError, InvalidQueryError):
@@ -205,13 +206,13 @@ def get_child(filename=None, mission_app=None, to_level=4):
     )
 
 
-def _extract_product_from_metadata(mission_app, level, **items):
-    query = mission_app.query_criteria(**items)
+def _extract_product_from_metadata(mission_search, level, **items):
+    query = mission_search.query_criteria(**items)
     if len(query) == 0:
         raise ValueError(
             f"Could not find Level {level} products matching {items}. "
             f"Please provide a valid Roman Level {level} product file."
         )
-    results = mission_app.get_unique_product_list(query)
+    results = mission_search.get_unique_product_list(query)
     level_products = results[results['category'] == str(level)]
     return level_products
